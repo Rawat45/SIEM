@@ -1,54 +1,84 @@
 import pandas as pd
-import numpy as np
+import io
+import ipywidgets as widgets
+from IPython.display import display
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
-import requests
 
-log_url = "https://api.mockaroo.com/api/8b884d20?count=1000&key=c72b4180"  
-response = requests.get(log_url)
-
-if response.status_code == 200:
+def load_and_display_data(file):
     try:
-        log_data = pd.DataFrame(response.json())
-        print("Data successfully loaded:")
-        print(log_data.head())  # Check the first few rows of the data
-    except ValueError as e:
-        print("Error decoding JSON:", e)
-else:
-    print(f"Failed to fetch logs. HTTP Status: {response.status_code}")
-    exit()
+        df = pd.read_csv(io.BytesIO(file['content']))
+        display(df.head())
+        return df
+    except Exception as e:
+        print(f"Error loading file: {e}")
+        return None
+def plot_data(df):
+    if df is not None:
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            plt.figure(figsize=(10, 6))
+            sns.lineplot(x='timestamp', y='bytes_sent', data=df)
+            plt.title('Bytes Sent Over Time')
+            plt.xticks(rotation=45)
+            plt.show()
+        else:
+            print("Timestamp column is missing")
 
-log_data['timestamp'] = pd.to_datetime(log_data['timestamp'])
-log_data['time_numeric'] = log_data['timestamp'].view(np.int64) // 10**9  
+def detect_anomalies(df):
+    if df is not None:
+        if 'timestamp' in df.columns and 'bytes_sent' in df.columns and 'bytes_received' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df['timestamp_numeric'] = df['timestamp'].astype(int) / 10**9 
+            features = ['timestamp_numeric', 'bytes_sent', 'bytes_received']
+            data = df[features]
 
-features = ['event_id', 'time_numeric', 'bytes_sent', 'bytes_received']
-data = log_data[features]
+            scaler = StandardScaler()
+            data_normalized = scaler.fit_transform(data)
 
-scaler = StandardScaler()
-data_normalized = scaler.fit_transform(data)
+            model = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
+            model.fit(data_normalized)  
 
-X_train, X_test = train_test_split(data_normalized, test_size=0.2, random_state=42)
+            df['anomaly_score'] = model.decision_function(data_normalized)
+            df['is_anomaly'] = model.predict(data_normalized)  
+            anomalies = df[df['is_anomaly'] == -1]
+            print(f"Anomalies detected: {len(anomalies)}")
+            display(anomalies)
+            plt.figure(figsize=(10, 6))
+            sns.scatterplot(x='timestamp', y='bytes_sent', data=df, hue='is_anomaly', palette={1: 'blue', -1: 'red'})
+            plt.title('Anomaly Detection: Bytes Sent')
+            plt.xticks(rotation=45)
+            plt.show()
+        else:
+            print("Required columns ('timestamp', 'bytes_sent', 'bytes_received') are missing")
+    else:
+        print("No data available to detect anomalies")
+file_upload = widgets.FileUpload(
+    accept='.csv',  
+    multiple=False  
+)
+upload_button = widgets.Button(description="Upload CSV")
+plot_button = widgets.Button(description="Plot Data")
+anomaly_button = widgets.Button(description="Detect Anomalies")
+df = None
+def on_upload_button_clicked(b):
+    global df
+    if file_upload.value:
+        uploaded_file = list(file_upload.value.values())[0]
+        df = load_and_display_data(uploaded_file)
+    else:
+        print("No file uploaded!")
 
+def on_plot_button_clicked(b):
+    plot_data(df)
+def on_anomaly_button_clicked(b):
+    detect_anomalies(df)
 
-model = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
-model.fit(X_train)
+upload_button.on_click(on_upload_button_clicked)
+plot_button.on_click(on_plot_button_clicked)
+anomaly_button.on_click(on_anomaly_button_clicked)
 
-log_data['anomaly_score'] = model.decision_function(data_normalized)
-log_data['is_anomaly'] = model.predict(data_normalized)  # -1 indicates anomaly, 1 indicates normal
+display(file_upload, upload_button, plot_button, anomaly_button)
 
-
-anomalies = log_data[log_data['is_anomaly'] == -1]
-
-
-print("Detected Anomalies:")
-print(anomalies)
-
-plt.figure(figsize=(10, 6))
-plt.scatter(log_data['time_numeric'], log_data['anomaly_score'], c=log_data['is_anomaly'], cmap='coolwarm')
-plt.title("Anomaly Scores Over Time")
-plt.xlabel("Time (numeric)")
-plt.ylabel("Anomaly Score")
-plt.colorbar(label="Anomaly (-1) vs Normal (1)")
-plt.show()

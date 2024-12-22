@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import requests
+
+log_url = "https://api.mockaroo.com/api/8b884d20?count=1000&key=c72b4180"  
+response = requests.get(log_url)
+
+if response.status_code == 200:
+    try:
+        log_data = pd.DataFrame(response.json())
+        print("Data successfully loaded:")
+        print(log_data.head())  # Check the first few rows of the data
+    except ValueError as e:
+        print("Error decoding JSON:", e)
+else:
+    print(f"Failed to fetch logs. HTTP Status: {response.status_code}")
+    exit()
+
+log_data['timestamp'] = pd.to_datetime(log_data['timestamp'])
+log_data['time_numeric'] = log_data['timestamp'].view(np.int64) // 10**9  
+
+features = ['event_id', 'time_numeric', 'bytes_sent', 'bytes_received']
+data = log_data[features]
+
+scaler = StandardScaler()
+data_normalized = scaler.fit_transform(data)
+
+X_train, X_test = train_test_split(data_normalized, test_size=0.2, random_state=42)
+
+
+model = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
+model.fit(X_train)
+
+log_data['anomaly_score'] = model.decision_function(data_normalized)
+log_data['is_anomaly'] = model.predict(data_normalized)  # -1 indicates anomaly, 1 indicates normal
+
+
+anomalies = log_data[log_data['is_anomaly'] == -1]
+
+
+print("Detected Anomalies:")
+print(anomalies)
+
+plt.figure(figsize=(10, 6))
+plt.scatter(log_data['time_numeric'], log_data['anomaly_score'], c=log_data['is_anomaly'], cmap='coolwarm')
+plt.title("Anomaly Scores Over Time")
+plt.xlabel("Time (numeric)")
+plt.ylabel("Anomaly Score")
+plt.colorbar(label="Anomaly (-1) vs Normal (1)")
+plt.show()

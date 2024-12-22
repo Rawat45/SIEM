@@ -4,20 +4,17 @@ import ipywidgets as widgets
 from IPython.display import display
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 
-# Function to load and display the dataset
 def load_and_display_data(file):
     try:
-        # Use BytesIO to read the file from bytes data
         df = pd.read_csv(io.BytesIO(file['content']))
-        # Display the first few rows
         display(df.head())
         return df
     except Exception as e:
         print(f"Error loading file: {e}")
         return None
-
-# Function to plot data
 def plot_data(df):
     if df is not None:
         if 'timestamp' in df.columns:
@@ -30,38 +27,58 @@ def plot_data(df):
         else:
             print("Timestamp column is missing")
 
-# Create file upload widget
+def detect_anomalies(df):
+    if df is not None:
+        if 'timestamp' in df.columns and 'bytes_sent' in df.columns and 'bytes_received' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df['timestamp_numeric'] = df['timestamp'].astype(int) / 10**9 
+            features = ['timestamp_numeric', 'bytes_sent', 'bytes_received']
+            data = df[features]
+
+            scaler = StandardScaler()
+            data_normalized = scaler.fit_transform(data)
+
+            model = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
+            model.fit(data_normalized)  
+
+            df['anomaly_score'] = model.decision_function(data_normalized)
+            df['is_anomaly'] = model.predict(data_normalized)  
+            anomalies = df[df['is_anomaly'] == -1]
+            print(f"Anomalies detected: {len(anomalies)}")
+            display(anomalies)
+            plt.figure(figsize=(10, 6))
+            sns.scatterplot(x='timestamp', y='bytes_sent', data=df, hue='is_anomaly', palette={1: 'blue', -1: 'red'})
+            plt.title('Anomaly Detection: Bytes Sent')
+            plt.xticks(rotation=45)
+            plt.show()
+        else:
+            print("Required columns ('timestamp', 'bytes_sent', 'bytes_received') are missing")
+    else:
+        print("No data available to detect anomalies")
 file_upload = widgets.FileUpload(
-    accept='.csv',  # Specify accepted file types
-    multiple=False  # Only accept one file at a time
+    accept='.csv',  
+    multiple=False  
 )
-
-# Create a button to trigger the file upload
 upload_button = widgets.Button(description="Upload CSV")
-
-# Create a button for plotting
 plot_button = widgets.Button(description="Plot Data")
-
-# Global variable to hold the data
+anomaly_button = widgets.Button(description="Detect Anomalies")
 df = None
-
-# Link upload button to the function
 def on_upload_button_clicked(b):
     global df
     if file_upload.value:
-        # Get the uploaded file
         uploaded_file = list(file_upload.value.values())[0]
         df = load_and_display_data(uploaded_file)
     else:
         print("No file uploaded!")
 
-# Button action for plotting
 def on_plot_button_clicked(b):
     plot_data(df)
+def on_anomaly_button_clicked(b):
+    detect_anomalies(df)
 
-# Set up the button actions
 upload_button.on_click(on_upload_button_clicked)
 plot_button.on_click(on_plot_button_clicked)
+anomaly_button.on_click(on_anomaly_button_clicked)
 
-# Display the file upload widget, upload button, and plot button
-display(file_upload, upload_button, plot_button)
+display(file_upload, upload_button, plot_button, anomaly_button)
+

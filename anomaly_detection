@@ -1,54 +1,67 @@
 import pandas as pd
-import numpy as np
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+import io
+import ipywidgets as widgets
+from IPython.display import display
 import matplotlib.pyplot as plt
-import requests
+import seaborn as sns
 
-log_url = "https://api.mockaroo.com/api/8b884d20?count=1000&key=c72b4180"  
-response = requests.get(log_url)
-
-if response.status_code == 200:
+# Function to load and display the dataset
+def load_and_display_data(file):
     try:
-        log_data = pd.DataFrame(response.json())
-        print("Data successfully loaded:")
-        print(log_data.head())  # Check the first few rows of the data
-    except ValueError as e:
-        print("Error decoding JSON:", e)
-else:
-    print(f"Failed to fetch logs. HTTP Status: {response.status_code}")
-    exit()
+        # Use BytesIO to read the file from bytes data
+        df = pd.read_csv(io.BytesIO(file['content']))
+        # Display the first few rows
+        display(df.head())
+        return df
+    except Exception as e:
+        print(f"Error loading file: {e}")
+        return None
 
-log_data['timestamp'] = pd.to_datetime(log_data['timestamp'])
-log_data['time_numeric'] = log_data['timestamp'].view(np.int64) // 10**9  
+# Function to plot data
+def plot_data(df):
+    if df is not None:
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            plt.figure(figsize=(10, 6))
+            sns.lineplot(x='timestamp', y='bytes_sent', data=df)
+            plt.title('Bytes Sent Over Time')
+            plt.xticks(rotation=45)
+            plt.show()
+        else:
+            print("Timestamp column is missing")
 
-features = ['event_id', 'time_numeric', 'bytes_sent', 'bytes_received']
-data = log_data[features]
+# Create file upload widget
+file_upload = widgets.FileUpload(
+    accept='.csv',  # Specify accepted file types
+    multiple=False  # Only accept one file at a time
+)
 
-scaler = StandardScaler()
-data_normalized = scaler.fit_transform(data)
+# Create a button to trigger the file upload
+upload_button = widgets.Button(description="Upload CSV")
 
-X_train, X_test = train_test_split(data_normalized, test_size=0.2, random_state=42)
+# Create a button for plotting
+plot_button = widgets.Button(description="Plot Data")
 
+# Global variable to hold the data
+df = None
 
-model = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
-model.fit(X_train)
+# Link upload button to the function
+def on_upload_button_clicked(b):
+    global df
+    if file_upload.value:
+        # Get the uploaded file
+        uploaded_file = list(file_upload.value.values())[0]
+        df = load_and_display_data(uploaded_file)
+    else:
+        print("No file uploaded!")
 
-log_data['anomaly_score'] = model.decision_function(data_normalized)
-log_data['is_anomaly'] = model.predict(data_normalized)  # -1 indicates anomaly, 1 indicates normal
+# Button action for plotting
+def on_plot_button_clicked(b):
+    plot_data(df)
 
+# Set up the button actions
+upload_button.on_click(on_upload_button_clicked)
+plot_button.on_click(on_plot_button_clicked)
 
-anomalies = log_data[log_data['is_anomaly'] == -1]
-
-
-print("Detected Anomalies:")
-print(anomalies)
-
-plt.figure(figsize=(10, 6))
-plt.scatter(log_data['time_numeric'], log_data['anomaly_score'], c=log_data['is_anomaly'], cmap='coolwarm')
-plt.title("Anomaly Scores Over Time")
-plt.xlabel("Time (numeric)")
-plt.ylabel("Anomaly Score")
-plt.colorbar(label="Anomaly (-1) vs Normal (1)")
-plt.show()
+# Display the file upload widget, upload button, and plot button
+display(file_upload, upload_button, plot_button)

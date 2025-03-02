@@ -82,21 +82,3 @@ If you have suggestions or improvements, feel free to fork the repository, make 
 
 License
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-Tips:
-Replace https://github.com/your-username/siem-anomaly-detection.git with your actual GitHub repository URL.
-The requirements.txt file should list all the dependencies that can be installed via pip install -r requirements.txt.
-You can also add sample data files or instructions on how users can generate their own test data.
-
-
-
-
-
-
-
-
-
-
-
-
-ChatGPT can make mistakes. Check important info.
